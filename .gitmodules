@@ -1,0 +1,3 @@
+[submodule "libdeflate-java"]
+	path = libdeflate-java
+	url = https://github.com/astei/libdeflate-java
