@@ -1,11 +1,17 @@
 package de.skyrising.mc.scanner
 
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
+import it.unimi.dsi.fastutil.objects.Object2IntMap
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import it.unimi.dsi.fastutil.objects.Object2LongMap
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.*
+import java.util.function.LongPredicate
+import kotlin.collections.LinkedHashMap
+import kotlin.collections.LinkedHashSet
 
 data class PlayerFile(private val path: Path) : Scannable {
     override val size: Long = Files.size(path)
@@ -36,28 +42,55 @@ data class PlayerFile(private val path: Path) : Scannable {
 }
 
 fun scanInventory(slots: ListTag<CompoundTag>, needles: Collection<ItemType>, statsMode: Boolean): List<Object2LongMap<ItemType>> {
-    val ids = needles.mapTo(mutableSetOf(), ItemType::id)
+    val byId = LinkedHashMap<Identifier, MutableSet<ItemType>>()
+    for (needle in needles) {
+        byId.computeIfAbsent(needle.id) { LinkedHashSet() }.add(needle)
+    }
     val result = Object2LongOpenHashMap<ItemType>()
     val inventories = mutableListOf<Object2LongMap<ItemType>>(result)
     for (slot in slots) {
         if (!slot.has("id", Tag.STRING)) continue
-        val id = slot.getString("id")
+        val id = Identifier(slot.getString("id"))
         val contained = getSubResults(slot, needles, statsMode)
-        if (id in ids || (ids.isEmpty() && statsMode && contained.isEmpty())) {
+        val matchingTypes = byId[id]
+        if (matchingTypes != null || (byId.isEmpty() && statsMode && contained.isEmpty())) {
             val dmg = if (slot.has("Damage", Tag.INTEGER)) slot.getInt("Damage") else null
-            if (dmg != null && dmg != 0 && dmg < 16) {
-                result.addTo(ItemType("$id:$dmg"), slot.getInt("Count").toLong())
-            } else {
-                result.addTo(ItemType(id), slot.getInt("Count").toLong())
+            var bestMatch = if (statsMode) ItemType(id, dmg ?: -1) else null
+            if (matchingTypes != null) {
+                for (type in matchingTypes) {
+                    if (dmg == type.damage || (bestMatch == null && type.damage < 0)) {
+                        bestMatch = type
+                    }
+                }
+            }
+            if (bestMatch != null) {
+                result.addTo(bestMatch, slot.getInt("Count").toLong())
             }
         }
         if (contained.isEmpty()) continue
-        if (statsMode) inventories.addAll(contained)
+        if (statsMode) {
+            contained.forEach(::flatten)
+            inventories.addAll(contained)
+        }
         for (e in contained[0].object2LongEntrySet()) {
             result.addTo(e.key, e.longValue)
         }
     }
+    flatten(result)
     return inventories
+}
+
+fun flatten(items: Object2LongMap<ItemType>) {
+    val updates = Object2LongOpenHashMap<ItemType>()
+    for (e in items.object2LongEntrySet()) {
+        if (e.key.flattened) continue
+        val flattened = e.key.flatten()
+        if (flattened == e.key) continue
+        updates[flattened] = if (flattened in updates) updates.getLong(flattened) else items.getLong(flattened) + e.longValue
+        e.setValue(0)
+    }
+    items.putAll(updates)
+    items.values.removeIf(LongPredicate{ it == 0L })
 }
 
 fun getSubResults(slot: CompoundTag, needles: Collection<ItemType>, statsMode: Boolean): List<Object2LongMap<ItemType>> {

@@ -10,9 +10,9 @@ collect statistics about inventory contents
 
 ## Example Usage
 
-### Searching for Sponges (in 1.12)
+### Searching for Sponges
 ```shell
-> java -jar mc-scanner-<version>.jar -i sponge -b 19 <world directory> sponges.zip
+> java -jar mc-scanner-<version>.jar -i sponge -i wet_sponge -b sponge -b wet_sponge <world directory> sponges.zip
 # ... 20s later ...
 # 2671/2671 5.9GiB/5.9GiB 298.6MiB/s 30 results 
 ```

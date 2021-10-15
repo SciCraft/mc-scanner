@@ -360,6 +360,7 @@ data class CompoundTag(val value: MutableMap<String, Tag>) : Tag(), MutableMap<S
     fun getCompound(key: String) = getTyped<CompoundTag, CompoundTag>(key) { it }
     fun getByteArray(key: String) = getTyped(key, ByteArrayTag::value)
     fun getString(key: String) = getTyped(key, StringTag::value)
+    fun getLongArray(key: String) = getTyped(key, LongArrayTag::value)
 
     fun getInt(key: String): Int {
         val tag = get(key, INTEGER) ?: throw IllegalArgumentException("No int value for $key")

@@ -16,7 +16,7 @@ fun main(args: Array<String>) {
     val parser = OptionParser()
     val helpArg = parser.accepts("help").forHelp()
     val nonOptions = parser.nonOptions()
-    val blockArg = parser.acceptsAll(listOf("b", "block"), "Add a block to search for").withRequiredArg().ofType(Integer::class.java)
+    val blockArg = parser.acceptsAll(listOf("b", "block"), "Add a block to search for").withRequiredArg()
     val itemArg = parser.acceptsAll(listOf("i", "item"), "Add an item to search for").withRequiredArg()
     val statsArg = parser.accepts("stats", "Calculate statistics for storage tech")
     val threadsArg = parser.acceptsAll(listOf("t", "threads"), "Set the number of threads to use").withRequiredArg().ofType(Integer::class.java)
@@ -39,10 +39,14 @@ fun main(args: Array<String>) {
             return
         }
         for (block in options.valuesOf(blockArg)) {
-            needles.add(BlockType(block.toInt()))
+            val state = BlockState.parse(block)
+            needles.add(state)
+            needles.addAll(state.unflatten())
         }
         for (item in options.valuesOf(itemArg)) {
-            needles.add(ItemType(if (':' in item) item else "minecraft:$item"))
+            val itemType = ItemType.parse(item)
+            needles.add(itemType)
+            needles.addAll(itemType.unflatten())
         }
         if (options.has(threadsArg)) threads = options.valueOf(threadsArg).toInt()
         statsMode = options.has(statsArg)
@@ -138,6 +142,7 @@ fun getHaystack(path: Path): Set<Scannable> {
 }
 
 fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Collection<Needle>, statsMode: Boolean) {
+    println(needles)
     val haystack = getHaystack(path)
     var totalSize = 0L
     for (s in haystack) totalSize += s.size
@@ -226,8 +231,8 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
     if (!statsMode) {
         val totalTypes = total.keys.sortedWith { a, b ->
             if (a.javaClass != b.javaClass) return@sortedWith a.javaClass.hashCode() - b.javaClass.hashCode()
-            if (a is ItemType && b is ItemType) return@sortedWith a.id.compareTo(b.id)
-            if (a is BlockType && b is BlockType) return@sortedWith Integer.compareUnsigned(a.id, b.id)
+            if (a is ItemType && b is ItemType) return@sortedWith a.compareTo(b)
+            if (a is BlockState && b is BlockState) return@sortedWith a.compareTo(b)
             0
         }
         for (type in totalTypes) {
@@ -246,11 +251,11 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
             locationsFile.println('"')
         }
         locationsFile.close()
-        val types = stats.keys.sortedBy { it.id }
+        val types = stats.keys.sorted()
         val countsFile = PrintStream(Files.newOutputStream(outPath.resolve("counts.csv")), false, "UTF-8")
         countsFile.println("Type,Total,Number of Inventories")
         for (type in types) {
-            countsFile.print(type.id)
+            countsFile.print(type.format())
             countsFile.print(',')
             countsFile.print(total.getLong(type))
             countsFile.print(',')
@@ -260,7 +265,7 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
         val statsFile = PrintStream(Files.newOutputStream(outPath.resolve("stats.csv")), false, "UTF-8")
         for (type in types) {
             statsFile.print(',')
-            statsFile.print(type.id)
+            statsFile.print(type.format())
         }
         statsFile.println()
         for (a in types) {
@@ -286,10 +291,7 @@ interface Scannable {
     fun scan(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult>
 }
 interface Location
-interface Needle
 
-data class BlockType(val id: Int) : Needle
-data class ItemType(val id: String) : Needle
 data class SubLocation(val parent: Location, val index: Int): Location
 data class ChunkPos(val dimension: String, val x: Int, val z: Int) : Location
 data class Container(val type: String, val location: Location) : Location
