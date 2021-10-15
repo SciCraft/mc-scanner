@@ -1,11 +1,8 @@
 package de.skyrising.mc.scanner
 
-import me.steinborn.libdeflate.CompressionType
-import me.steinborn.libdeflate.LibdeflateDecompressor
 import java.io.*
 import java.nio.ByteBuffer
 import java.util.zip.*
-import kotlin.system.exitProcess
 
 class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
     override fun readFully(b: ByteArray) {
@@ -102,8 +99,8 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
 
 var useLibDeflate = false
 
-fun inflate(buf: ByteBuffer, arr: ByteArray? = null) = if (useLibDeflate) inflateLibDeflate(buf, arr) else inflateJava2(buf, arr)
-fun gunzip(buf: ByteBuffer, arr: ByteArray? = null) = if (useLibDeflate) gunzipLibDeflate(buf, arr) else gunzipJava(buf, arr)
+fun inflate(buf: ByteBuffer, arr: ByteArray? = null) = inflateJava2(buf, arr)
+fun gunzip(buf: ByteBuffer, arr: ByteArray? = null) = gunzipJava(buf, arr)
 
 fun inflateJava2(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
     val length = buf.remaining()
@@ -121,35 +118,6 @@ fun inflateJava2(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
     inflater.end()
     return ByteBuffer.wrap(bytes, 0, uncompressedBytes)
 }
-
-fun decompress(buf: ByteBuffer, arr: ByteArray? = null, type: CompressionType): ByteBuffer {
-    val decompressor = LibdeflateDecompressor()
-    var bytes = arr ?: ByteArray(buf.remaining() * 5)
-    var out = ByteBuffer.wrap(bytes)
-    val origSize = bytes.size
-    var resize = 0
-    while (true) {
-        try {
-            val size = decompressor.decompressUnknown(buf.duplicate(), out, type)
-            if (size == -1L) {
-                bytes = ByteArray(bytes.size * 2)
-                out = ByteBuffer.wrap(bytes)
-                resize++
-                continue
-            }
-            out.position(0)
-            out.limit(size.toInt())
-            // if (resize > 0) println("resizes: $resize, $origSize -> $size")
-            break
-        } catch (e: DataFormatException) {
-            throw e
-        }
-    }
-    return out
-}
-
-fun inflateLibDeflate(buf: ByteBuffer, arr: ByteArray? = null) = decompress(buf, arr, CompressionType.ZLIB)
-fun gunzipLibDeflate(buf: ByteBuffer, arr: ByteArray? = null) = decompress(buf, arr, CompressionType.GZIP)
 
 fun inflateJava(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
     val length = buf.remaining()

@@ -10,7 +10,6 @@ import java.util.*
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.function.DoubleBinaryOperator
 import java.util.function.ToIntFunction
 
 fun main(args: Array<String>) {
@@ -21,7 +20,6 @@ fun main(args: Array<String>) {
     val itemArg = parser.acceptsAll(listOf("i", "item"), "Add an item to search for").withRequiredArg()
     val statsArg = parser.accepts("stats", "Calculate statistics for storage tech")
     val threadsArg = parser.acceptsAll(listOf("t", "threads"), "Set the number of threads to use").withRequiredArg().ofType(Integer::class.java)
-    val libDeflateArg = parser.accepts("libdeflate", "Use libdeflate")
     val loopArg = parser.accepts("loop").withOptionalArg().ofType(Integer::class.java)
     val needles = mutableListOf<Needle>()
     fun printUsage() {
@@ -47,7 +45,6 @@ fun main(args: Array<String>) {
             needles.add(ItemType(if (':' in item) item else "minecraft:$item"))
         }
         if (options.has(threadsArg)) threads = options.valueOf(threadsArg).toInt()
-        useLibDeflate = options.has(libDeflateArg)
         statsMode = options.has(statsArg)
         if (options.has(loopArg)) {
             loopCount = if (options.hasArgument(loopArg)) {
