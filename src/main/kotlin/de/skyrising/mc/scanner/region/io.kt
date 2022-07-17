@@ -13,6 +13,8 @@ class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
     fun accept(visitor: RegionVisitor) {
         channel.position(0)
         fileSize = channel.size()
+        if (fileSize == 0L) return
+        if (fileSize < 1024 * 2 * 4) throw IOException("File is too small")
         val tableBuf = ByteBuffer.allocateDirect(1024 * 2 * 4)
         readFully(channel, tableBuf)
         tableBuf.flip()
@@ -93,10 +95,11 @@ class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
             visitor.onInvalidData(IllegalArgumentException("No data version"))
             return
         }
-        if (!chunk.has("Level", Tag.COMPOUND)) {
+        val version = chunk.getInt("DataVersion");
+        if (!chunk.has("Level", Tag.COMPOUND) && version < DataVersion.REMOVE_LEVEL_TAG) {
             visitor.onInvalidData(IllegalArgumentException("No level tag"))
             return
         }
-        visitor.visit(chunk.getInt("DataVersion"), chunk.getCompound("Level"))
+        visitor.visit(version, if (version >= DataVersion.REMOVE_LEVEL_TAG) chunk else chunk.getCompound("Level"))
     }
 }

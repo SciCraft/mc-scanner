@@ -193,7 +193,7 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
                     val matrix = result.needle.matrix
                     for (i in 0 until stride) {
                         inventoryCounts.addTo(types[i], 1)
-                        val map = stats.computeIfAbsent(types[i]) { Object2DoubleOpenHashMap() }
+                        val map = stats.computeIfAbsent(types[i], Object2ObjectFunction { Object2DoubleOpenHashMap() })
                         for (j in 0 until stride) {
                             val type = types[j]
                             val value = matrix[i * stride + j]

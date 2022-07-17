@@ -16,9 +16,9 @@ repositories {
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-    implementation("it.unimi.dsi:fastutil:8.5.2")
+    implementation("it.unimi.dsi:fastutil:8.5.8")
     implementation("net.sf.jopt-simple:jopt-simple:6.0-alpha-3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.2")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
