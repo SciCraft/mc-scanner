@@ -4,11 +4,13 @@ import de.skyrising.mc.scanner.*
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
+import kotlin.concurrent.getOrSet
+
+private val decompressedBuf = ThreadLocal<ByteArray>()
 
 class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
     private var fileSize: Long = 0
     private var chunkBuf: ByteBuffer? = null
-    private var decompressedBuf: ByteArray? = null
 
     fun accept(visitor: RegionVisitor) {
         channel.position(0)
@@ -59,13 +61,15 @@ class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
         chunkBuf.limit(length + 5)
         val compression = chunkBuf.get()
         //println("$chunkPos, offset=$offset, sectors=$sectors, length=$length, compression=$compression, buf=$chunkBuf")
-        if (decompressedBuf == null) decompressedBuf = ByteArray(length)
+        val dbuf = decompressedBuf.getOrSet {
+            ByteArray(length)
+        }
 
         val chunk = when (compression.toInt()) {
             1 -> {
                 try {
-                    val buf = gunzip(chunkBuf, decompressedBuf)
-                    decompressedBuf = buf.array()
+                    val buf = DECOMPRESSOR.decodeGzip(chunkBuf, dbuf)
+                    decompressedBuf.set(buf.array())
                     Tag.read(ByteBufferDataInput(buf))
                 } catch (e: Exception) {
                     visitor.onInvalidData(e)
@@ -74,8 +78,8 @@ class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
             }
             2 -> {
                 try {
-                    val buf = inflate(chunkBuf, decompressedBuf)
-                    decompressedBuf = buf.array()
+                    val buf = DECOMPRESSOR.decodeZlib(chunkBuf, dbuf)
+                    decompressedBuf.set(buf.array())
                     Tag.read(ByteBufferDataInput(buf))
                 } catch (e: Exception) {
                     visitor.onInvalidData(e)

@@ -3,6 +3,7 @@ package de.skyrising.mc.scanner
 import it.unimi.dsi.fastutil.objects.*
 import joptsimple.OptionException
 import joptsimple.OptionParser
+import joptsimple.ValueConverter
 import java.io.PrintStream
 import java.net.URI
 import java.nio.file.*
@@ -11,6 +12,8 @@ import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.function.ToIntFunction
+
+var DECOMPRESSOR = Decompressor.INTERNAL
 
 fun main(args: Array<String>) {
     val parser = OptionParser()
@@ -21,6 +24,11 @@ fun main(args: Array<String>) {
     val statsArg = parser.accepts("stats", "Calculate statistics for storage tech")
     val threadsArg = parser.acceptsAll(listOf("t", "threads"), "Set the number of threads to use").withRequiredArg().ofType(Integer::class.java)
     val loopArg = parser.accepts("loop").withOptionalArg().ofType(Integer::class.java)
+    val decompressorArg = parser.accepts("decompressor", "Decompressor to use").withOptionalArg().withValuesConvertedBy(object : ValueConverter<Decompressor> {
+        override fun convert(value: String) = Decompressor.valueOf(value.uppercase())
+        override fun valueType() = Decompressor::class.java
+        override fun valuePattern() = "internal|java"
+    })
     val needles = mutableListOf<Needle>()
     fun printUsage() {
         System.err.println("Usage: mc-scanner (-i <item> | -b <block>)* [options] <path> [output]")
@@ -49,6 +57,7 @@ fun main(args: Array<String>) {
             needles.addAll(itemType.unflatten())
         }
         if (options.has(threadsArg)) threads = options.valueOf(threadsArg).toInt()
+        if (options.has(decompressorArg)) DECOMPRESSOR = options.valueOf(decompressorArg)
         statsMode = options.has(statsArg)
         if (options.has(loopArg)) {
             loopCount = if (options.hasArgument(loopArg)) {

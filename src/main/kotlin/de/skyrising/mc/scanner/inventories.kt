@@ -26,7 +26,7 @@ data class PlayerFile(private val path: Path) : Scannable {
         val itemNeedles = needles.filterIsInstance<ItemType>()
         if (itemNeedles.isEmpty()) return emptyList()
         val raw = Files.readAllBytes(path)
-        val data = Tag.read(ByteBufferDataInput(gunzip(ByteBuffer.wrap(raw))))
+        val data = Tag.read(ByteBufferDataInput(DECOMPRESSOR.decodeGzip(ByteBuffer.wrap(raw))))
         if (data !is CompoundTag) return emptyList()
         val results = mutableListOf<SearchResult>()
         if (data.has("Inventory", Tag.LIST)) {

@@ -97,42 +97,39 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
     }
 }
 
-var useLibDeflate = false
+enum class Decompressor {
+    INTERNAL {
+        override fun decodeZlib(buf: ByteBuffer, arr: ByteArray?) = de.skyrising.mc.scanner.zlib.decodeZlib(buf, arr)
+        override fun decodeGzip(buf: ByteBuffer, arr: ByteArray?) = de.skyrising.mc.scanner.zlib.decodeGzip(buf, arr)
+    },
+    JAVA {
+        override fun decodeZlib(buf: ByteBuffer, arr: ByteArray?): ByteBuffer {
+            val length = buf.remaining()
+            var bytes = arr ?: ByteArray(length)
+            if (bytes.size < length) bytes = ByteArray(length)
+            buf.get(bytes, 0, length)
+            val inflater = Inflater()
+            inflater.setInput(bytes.copyOfRange(0, length))
+            var uncompressedBytes = inflater.inflate(bytes)
+            while (!inflater.finished()) {
+                if (inflater.needsInput() || inflater.needsDictionary()) throw ZipException()
+                bytes = bytes.copyOf(bytes.size * 2)
+                uncompressedBytes += inflater.inflate(bytes, uncompressedBytes, bytes.size - uncompressedBytes)
+            }
+            inflater.end()
+            return ByteBuffer.wrap(bytes, 0, uncompressedBytes)
+        }
 
-fun inflate(buf: ByteBuffer, arr: ByteArray? = null) = inflateJava2(buf, arr)
-fun gunzip(buf: ByteBuffer, arr: ByteArray? = null) = gunzipJava(buf, arr)
+        override fun decodeGzip(buf: ByteBuffer, arr: ByteArray?): ByteBuffer {
+            val length = buf.remaining()
+            var bytes = arr ?: ByteArray(length)
+            if (bytes.size < length) bytes = ByteArray(length)
+            buf.get(bytes, 0, length)
+            val gzip = GZIPInputStream(ByteArrayInputStream(bytes, 0, length))
+            return ByteBuffer.wrap(gzip.readBytes())
+        }
+    };
 
-fun inflateJava2(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
-    val length = buf.remaining()
-    var bytes = arr ?: ByteArray(length)
-    if (bytes.size < length) bytes = ByteArray(length)
-    buf.get(bytes, 0, length)
-    val inflater = Inflater()
-    inflater.setInput(bytes.copyOfRange(0, length))
-    var uncompressedBytes = inflater.inflate(bytes)
-    while (!inflater.finished()) {
-        if (inflater.needsInput() || inflater.needsDictionary()) throw ZipException()
-        bytes = bytes.copyOf(bytes.size * 2)
-        uncompressedBytes += inflater.inflate(bytes, uncompressedBytes, bytes.size - uncompressedBytes)
-    }
-    inflater.end()
-    return ByteBuffer.wrap(bytes, 0, uncompressedBytes)
-}
-
-fun inflateJava(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
-    val length = buf.remaining()
-    var bytes = arr ?: ByteArray(length)
-    if (bytes.size < length) bytes = ByteArray(length)
-    buf.get(bytes, 0, length)
-    val inflater = InflaterInputStream(ByteArrayInputStream(bytes, 0, length))
-    return ByteBuffer.wrap(inflater.readBytes())
-}
-
-fun gunzipJava(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer {
-    val length = buf.remaining()
-    var bytes = arr ?: ByteArray(length)
-    if (bytes.size < length) bytes = ByteArray(length)
-    buf.get(bytes, 0, length)
-    val gzip = GZIPInputStream(ByteArrayInputStream(bytes, 0, length))
-    return ByteBuffer.wrap(gzip.readBytes())
+    abstract fun decodeZlib(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer
+    abstract fun decodeGzip(buf: ByteBuffer, arr: ByteArray? = null): ByteBuffer
 }
