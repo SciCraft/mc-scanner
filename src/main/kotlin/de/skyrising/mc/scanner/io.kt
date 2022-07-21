@@ -5,6 +5,8 @@ import java.nio.ByteBuffer
 import java.util.zip.*
 
 class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
+    private var chars = CharArray(128)
+
     override fun readFully(b: ByteArray) {
         if (buf.remaining() < b.size) throw EOFException()
         buf.get(b)
@@ -40,7 +42,7 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
         if (buf.remaining() < utflen) throw EOFException()
         var count = 0
         val pos = buf.position()
-        val chars = CharArray(utflen)
+        val chars = if (chars.size >= utflen) chars else CharArray(utflen).also { chars = it }
         while (count < utflen) {
             val c = buf[pos + count].toInt() and 0xff
             chars[count] = c.toChar()
@@ -49,7 +51,7 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
         }
         if (count == utflen) {
             skipBytes(count)
-            return String(chars)
+            return String(chars, 0, count)
         }
         return readUTF(chars, count, pos)
     }

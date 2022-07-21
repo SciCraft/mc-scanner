@@ -12,13 +12,13 @@ import java.util.*
 fun readFully(channel: ReadableByteChannel, b: ByteBuffer) {
     val expectedLength: Int = b.remaining()
     var read = 0
-    while (read < expectedLength) {
+    do {
         val readNow = channel.read(b)
         if (readNow <= 0) {
             break
         }
         read += readNow
-    }
+    } while (read < expectedLength)
     if (read < expectedLength) {
         throw EOFException()
     }

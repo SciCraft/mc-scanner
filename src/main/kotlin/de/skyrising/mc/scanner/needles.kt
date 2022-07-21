@@ -9,8 +9,6 @@ private val BLOCK_STATE_MAP = readBlockStateMap()
 private val ITEM_MAP = readItemMap()
 
 data class Identifier(val namespace: String, val path: String) : Comparable<Identifier> {
-    constructor(id: String) : this(getNamespace(id), getPath(id))
-
     override fun compareTo(other: Identifier): Int {
         val namespaceCompare = namespace.compareTo(other.namespace)
         if (namespaceCompare != 0) return namespaceCompare
@@ -20,8 +18,15 @@ data class Identifier(val namespace: String, val path: String) : Comparable<Iden
     override fun toString() = "$namespace:$path"
 
     companion object {
-        fun getNamespace(id: String) = id.substringBefore(':', "minecraft")
-        fun getPath(id: String) = id.substringAfter(':')
+        fun of(id: String): Identifier {
+            val colon = id.indexOf(':')
+            if (colon < 0) return ofMinecraft(id)
+            val namespace = id.substring(0, colon)
+            val path = id.substring(colon + 1)
+            if (namespace == "minecraft") return ofMinecraft(path)
+            return Identifier(namespace, path)
+        }
+        fun ofMinecraft(path: String) = Identifier("minecraft", path)
     }
 }
 
@@ -76,11 +81,11 @@ data class BlockState(val id: Identifier, val properties: Map<String, String> = 
 
     companion object {
         fun parse(desc: String): BlockState {
-            if (!desc.contains('[')) return BlockState(Identifier(desc))
+            if (!desc.contains('[')) return BlockState(Identifier.of(desc))
             val bracketIndex = desc.indexOf('[')
             val closingBracketIndex = desc.indexOf(']', bracketIndex + 1)
             if (closingBracketIndex != desc.lastIndex) throw IllegalArgumentException("Expected closing ]")
-            val id = Identifier(desc.substring(0, bracketIndex))
+            val id = Identifier.of(desc.substring(0, bracketIndex))
             val properties = LinkedHashMap<String, String>()
             for (kvPair in desc.substring(bracketIndex + 1, closingBracketIndex).split(',')) {
                 val equalsIndex = kvPair.indexOf('=')
@@ -91,7 +96,7 @@ data class BlockState(val id: Identifier, val properties: Map<String, String> = 
         }
 
         fun from(nbt: CompoundTag): BlockState {
-            val id = Identifier(nbt.getString("Name"))
+            val id = Identifier.of(nbt.getString("Name"))
             if (!nbt.has("Properties", Tag.COMPOUND)) return BlockState(id)
             val properties = LinkedHashMap<String, String>()
             for (e in nbt.getCompound("Properties").entries) {
@@ -150,8 +155,8 @@ data class ItemType(val id: Identifier, val damage: Int = -1, val flattened: Boo
 
     companion object {
         fun parse(str: String): ItemType {
-            if (!str.contains('.')) return ItemType(Identifier(str))
-            return ItemType(Identifier(str.substringBefore('.')), str.substringAfter('.').toInt())
+            if (!str.contains('.')) return ItemType(Identifier.of(str))
+            return ItemType(Identifier.of(str.substringBefore('.')), str.substringAfter('.').toInt())
         }
     }
 }
@@ -180,7 +185,7 @@ private fun readItemMap(): Map<ItemType, Identifier> {
     val jsonMap = getFlatteningMap("items")
     val map = LinkedHashMap<ItemType, Identifier>()
     for (e in jsonMap.entries) {
-        map[ItemType.parse(e.key)] = Identifier(e.value.jsonPrimitive.content)
+        map[ItemType.parse(e.key)] = Identifier.of(e.value.jsonPrimitive.content)
     }
     return map
 }

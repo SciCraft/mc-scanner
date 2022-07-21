@@ -1,15 +1,16 @@
 package de.skyrising.mc.scanner
 
+import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap
 import java.io.*
 import java.util.*
-import java.util.zip.GZIPInputStream
-import java.util.zip.InflaterInputStream
 import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
 import kotlin.collections.HashSet
 import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
 
+interface TagType<T: Tag> {
+    fun read(din: DataInput): T
+}
 
 sealed class Tag {
     abstract fun write(out: DataOutput)
@@ -45,40 +46,26 @@ sealed class Tag {
             listOf("{}", "entities", "[]", "{}")
         )
 
-        private val idToTag = HashMap<Int, KClass<*>>()
-        private val tagToId = HashMap<KClass<*>, Int>()
+        private val idToTag = Array<Class<*>>(13) { EndTag::class.java }
+        private val idToType = Array<TagType<*>>(13) { EndTag }
+        private val tagToId = Reference2IntOpenHashMap<Class<*>>(13)
 
-        private fun register(cls: KClass<*>, id: Int) {
-            idToTag[id] = cls
-            tagToId[cls] = id
+        private fun <T: Tag> register(cls: KClass<T>, id: Int, type: TagType<T>) {
+            idToTag[id] = cls.java
+            idToType[id] = type
+            tagToId[cls.java] = id
         }
 
-        fun getId(tag: Tag) = tagToId[tag::class]!!
-        fun <T: Tag> getId(type: KClass<T>) = tagToId[type]!!
-        fun read(id: Int, din: DataInput) = when(id) {
-            END -> EndTag
-            BYTE -> ByteTag.read(din)
-            SHORT -> ShortTag.read(din)
-            INT -> IntTag.read(din)
-            LONG -> LongTag.read(din)
-            FLOAT -> FloatTag.read(din)
-            DOUBLE -> DoubleTag.read(din)
-            BYTE_ARRAY -> ByteArrayTag.read(din)
-            STRING -> StringTag.read(din)
-            LIST -> ListTag.read<Tag>(din)
-            COMPOUND -> CompoundTag.read(din)
-            INT_ARRAY -> IntArrayTag.read(din)
-            LONG_ARRAY -> LongArrayTag.read(din)
-            else -> throw IllegalArgumentException("Unknown tag type $id")
+        fun getId(tag: Tag) = tagToId.getInt(tag::class.java)
+        fun <T: Tag> getId(type: KClass<T>) = tagToId.getInt(type.java)
+
+        fun getReader(id: Int) = try {
+            idToType[id]
+        } catch (_: ArrayIndexOutOfBoundsException) {
+            throw IllegalArgumentException("Unknown tag type $id")
         }
 
-        fun readGZIP(input: InputStream) = DataInputStream(BufferedInputStream(GZIPInputStream(input))).use {
-            read(it)
-        }
-
-        fun readDeflate(input: InputStream) = DataInputStream(BufferedInputStream(InflaterInputStream(input))).use {
-            read(it)
-        }
+        inline fun read(id: Int, din: DataInput) = getReader(id).read(din)
 
         fun read(input: DataInput): Tag {
             val id = input.readByte().toInt()
@@ -88,32 +75,33 @@ sealed class Tag {
         }
 
         init {
-            register(EndTag::class, END)
-            register(ByteTag::class, BYTE)
-            register(ShortTag::class, SHORT)
-            register(IntTag::class, INT)
-            register(LongTag::class, LONG)
-            register(FloatTag::class, FLOAT)
-            register(DoubleTag::class, DOUBLE)
-            register(ByteArrayTag::class, BYTE_ARRAY)
-            register(StringTag::class, STRING)
-            register(ListTag::class, LIST)
-            register(CompoundTag::class, COMPOUND)
-            register(IntArrayTag::class, INT_ARRAY)
-            register(LongArrayTag::class, LONG_ARRAY)
+            register(EndTag::class, END, EndTag)
+            register(ByteTag::class, BYTE, ByteTag.Companion)
+            register(ShortTag::class, SHORT, ShortTag.Companion)
+            register(IntTag::class, INT, IntTag.Companion)
+            register(LongTag::class, LONG, LongTag.Companion)
+            register(FloatTag::class, FLOAT, FloatTag.Companion)
+            register(DoubleTag::class, DOUBLE, DoubleTag.Companion)
+            register(ByteArrayTag::class, BYTE_ARRAY, ByteArrayTag.Companion)
+            register(StringTag::class, STRING, StringTag.Companion)
+            register(ListTag::class, LIST, ListTag.Companion)
+            register(CompoundTag::class, COMPOUND, CompoundTag.Companion)
+            register(IntArrayTag::class, INT_ARRAY, IntArrayTag.Companion)
+            register(LongArrayTag::class, LONG_ARRAY, LongArrayTag.Companion)
         }
     }
 }
 
-object EndTag : Tag() {
+object EndTag : Tag(), TagType<EndTag> {
+    override fun read(din: DataInput) = EndTag
     override fun write(out: DataOutput) {}
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {}
 }
 
 data class ByteTag(val value: Byte) : Tag() {
     override fun write(out: DataOutput) = out.writeByte(value.toInt())
-    companion object {
-        fun read(din: DataInput) = ByteTag(din.readByte())
+    companion object : TagType<ByteTag> {
+        override fun read(din: DataInput) = ByteTag(din.readByte())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -123,8 +111,8 @@ data class ByteTag(val value: Byte) : Tag() {
 
 data class ShortTag(val value: Short) : Tag() {
     override fun write(out: DataOutput) = out.writeShort(value.toInt())
-    companion object {
-        fun read(din: DataInput) = ShortTag(din.readShort())
+    companion object : TagType<ShortTag> {
+        override fun read(din: DataInput) = ShortTag(din.readShort())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -134,8 +122,8 @@ data class ShortTag(val value: Short) : Tag() {
 
 data class IntTag(val value: Int) : Tag() {
     override fun write(out: DataOutput) = out.writeInt(value)
-    companion object {
-        fun read(din: DataInput) = IntTag(din.readInt())
+    companion object : TagType<IntTag> {
+        override fun read(din: DataInput) = IntTag(din.readInt())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -145,8 +133,8 @@ data class IntTag(val value: Int) : Tag() {
 
 data class LongTag(val value: Long) : Tag() {
     override fun write(out: DataOutput) = out.writeLong(value)
-    companion object {
-        fun read(din: DataInput) = LongTag(din.readLong())
+    companion object : TagType<LongTag> {
+        override fun read(din: DataInput) = LongTag(din.readLong())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -156,8 +144,8 @@ data class LongTag(val value: Long) : Tag() {
 
 data class FloatTag(val value: Float) : Tag() {
     override fun write(out: DataOutput) = out.writeFloat(value)
-    companion object {
-        fun read(din: DataInput) = FloatTag(din.readFloat())
+    companion object : TagType<FloatTag> {
+        override fun read(din: DataInput) = FloatTag(din.readFloat())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -167,8 +155,8 @@ data class FloatTag(val value: Float) : Tag() {
 
 data class DoubleTag(val value: Double) : Tag() {
     override fun write(out: DataOutput) = out.writeDouble(value)
-    companion object {
-        fun read(din: DataInput) = DoubleTag(din.readDouble())
+    companion object : TagType<DoubleTag> {
+        override fun read(din: DataInput) = DoubleTag(din.readDouble())
     }
 
     override fun toString(sb: StringBuilder, depth: Int, path: LinkedList<String>, indentString: String) {
@@ -201,8 +189,8 @@ data class ByteArrayTag(val value: ByteArray) : Tag() {
         sb.append(']')
     }
 
-    companion object {
-        fun read(din: DataInput): ByteArrayTag {
+    companion object : TagType<ByteArrayTag> {
+        override fun read(din: DataInput): ByteArrayTag {
             val value = ByteArray(din.readInt())
             din.readFully(value)
             return ByteArrayTag(value)
@@ -217,10 +205,10 @@ data class StringTag(val value: String) : Tag() {
         escape(sb, value)
     }
 
-    companion object {
+    companion object : TagType<StringTag> {
         val SIMPLE = Regex("[A-Za-z0-9._+-]+")
 
-        fun read(din: DataInput) = StringTag(din.readUTF())
+        override fun read(din: DataInput) = StringTag(din.readUTF())
 
         fun escape(sb: StringBuilder, s: String) {
             val start = sb.length
@@ -244,10 +232,6 @@ data class StringTag(val value: String) : Tag() {
 }
 
 data class ListTag<T : Tag>(val value: MutableList<T>) : Tag(), MutableList<T> by value {
-    init {
-        verify()
-    }
-
     constructor(value: Collection<T>) : this(value.toMutableList())
 
     fun verify(): Int {
@@ -296,34 +280,16 @@ data class ListTag<T : Tag>(val value: MutableList<T>) : Tag(), MutableList<T> b
 
     override fun toString() = "ListTag$value"
 
-    companion object {
-        fun <T : Tag> read(din: DataInput): ListTag<T> {
+    companion object : TagType<ListTag<*>> {
+        override fun read(din: DataInput): ListTag<*> {
             val id = din.readByte().toInt()
             val size = din.readInt()
             val value = ArrayList<Tag>(size)
-            when (id) {
-                END -> readList(value, size, din) { EndTag }
-                BYTE -> readList(value, size, din, ByteTag::read)
-                SHORT -> readList(value, size, din, ShortTag::read)
-                INT -> readList(value, size, din, IntTag::read)
-                LONG -> readList(value, size, din, LongTag::read)
-                FLOAT -> readList(value, size, din, FloatTag::read)
-                DOUBLE -> readList(value, size, din, DoubleTag::read)
-                BYTE_ARRAY -> readList(value, size, din, ByteArrayTag::read)
-                STRING -> readList(value, size, din, StringTag::read)
-                LIST -> readList(value, size, din) { read<Tag>(it) }
-                COMPOUND -> readList(value, size, din, CompoundTag::read)
-                INT_ARRAY -> readList(value, size, din, IntArrayTag::read)
-                LONG_ARRAY -> readList(value, size, din, LongArrayTag::read)
-                else -> throw IllegalArgumentException("Unknown tag type $id")
-            }
-            return ListTag(value as MutableList<T>)
-        }
-
-        private inline fun readList(value: MutableList<Tag>, size: Int, din: DataInput, reader: (DataInput) -> Tag) {
+            val reader = getReader(id)
             for (i in 0 until size) {
-                value.add(reader(din))
+                value.add(reader.read(din))
             }
+            return ListTag(value)
         }
     }
 }
@@ -418,7 +384,7 @@ data class CompoundTag(val value: MutableMap<String, Tag>) : Tag(), MutableMap<S
         sb.append('}')
     }
 
-    override fun toString() = "CompoundTag" + value
+    override fun toString() = "CompoundTag$value"
 
     private fun getOrderedKeys(path: List<String>): List<String> {
         var set = keys
@@ -433,15 +399,15 @@ data class CompoundTag(val value: MutableMap<String, Tag>) : Tag(), MutableMap<S
         return ordered
     }
 
-    companion object {
+    companion object : TagType<CompoundTag> {
         private val KEY_ORDER = mapOf(
             listOf("{}") to listOf("DataVersion", "author", "size", "data", "entities", "palette", "palettes"),
             listOf("{}", "data", "[]", "{}") to listOf("pos", "state", "nbt"),
             listOf("{}", "entities", "[]", "{}") to listOf("blockPos", "pos")
         )
 
-        fun read(din: DataInput): CompoundTag {
-            val map = LinkedHashMap<String, Tag>()
+        override fun read(din: DataInput): CompoundTag {
+            val map = LinkedHashMap<String, Tag>(8)
             while (true) {
                 val id = din.readByte().toInt()
                 if (id == 0) break
@@ -477,8 +443,8 @@ data class IntArrayTag(val value: IntArray) : Tag() {
         sb.append(']')
     }
 
-    companion object {
-        fun read(din: DataInput): IntArrayTag {
+    companion object : TagType<IntArrayTag> {
+        override fun read(din: DataInput): IntArrayTag {
             val value = IntArray(din.readInt())
             for (i in value.indices) value[i] = din.readInt()
             return IntArrayTag(value)
@@ -511,8 +477,8 @@ data class LongArrayTag(val value: LongArray) : Tag() {
         sb.append(']')
     }
 
-    companion object {
-        fun read(din: DataInput): LongArrayTag {
+    companion object : TagType<LongArrayTag> {
+        override fun read(din: DataInput): LongArrayTag {
             val value = LongArray(din.readInt())
             for (i in value.indices) value[i] = din.readLong()
             return LongArrayTag(value)
