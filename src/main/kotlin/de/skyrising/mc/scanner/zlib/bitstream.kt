@@ -15,23 +15,35 @@ class BitStream(private val buf: ByteBuffer) {
     private var bitbuf: Long = 0
     private var bitsleft = 0
 
-    private fun fillEightBits() {
-        val off = offset++
-        val buf = this.buf
-        val bl = bitsleft
-        if (off < buf.limit()) {
-            bitbuf = bitbuf or ((buf.get(off).toLong() and 0xffL) shl bl)
-        } else {
-            overrun++
-            offset--
+    private fun fillBitsSlow(bytes: Int) {
+        for(i in 0 until bytes) {
+            val off = offset++
+            val buf = this.buf
+            val bl = bitsleft
+            if (off < buf.limit()) {
+                bitbuf = bitbuf or ((buf.get(off).toLong() and 0xffL) shl bl)
+            } else {
+                overrun++
+                offset--
+            }
+            bitsleft = bl + 8
         }
-        bitsleft = bl + 8
+    }
+
+    private fun fillBitsFast(bytes: Int, off: Int, bl: Int) {
+        bitbuf = bitbuf or (buf.getLong(off) shl bl)
+        bitsleft = bl + (bytes shl 3)
+        offset = off + bytes
     }
 
     private fun fillBits() {
-        val steps = (64 - bitsleft) shr 3
-        for(i in 0 until steps) {
-            fillEightBits()
+        val bl = bitsleft
+        val off = offset
+        val desired = (64 - bl) shr 3
+        if (buf.limit() - off >= 8) {
+            fillBitsFast(desired, off, bl)
+        } else {
+            fillBitsSlow(desired)
         }
     }
 

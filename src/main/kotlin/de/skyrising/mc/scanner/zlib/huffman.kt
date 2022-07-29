@@ -14,7 +14,7 @@ interface HuffmanDecoder {
     }
 }
 
-const val HUFFMAN_LUT_BITS = 8
+const val HUFFMAN_LUT_BITS = 9
 const val HUFFMAN_LUT_MASK = (1 shl HUFFMAN_LUT_BITS) - 1
 const val HUFFMAN_LUT_SYM_BITS = 9
 const val HUFFMAN_LUT_SYM_SHIFT = 0

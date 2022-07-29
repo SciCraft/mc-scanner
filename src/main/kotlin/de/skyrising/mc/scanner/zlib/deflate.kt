@@ -123,6 +123,14 @@ private fun updateCodes(state: InflatorState, type: Int, stream: BitStream) = wh
     else -> throw DataFormatException("invalid block type")
 }
 
+private fun printChar(c: Char) {
+    if (c in ' '..'~') {
+        print(c)
+    } else {
+        print("\\x%02x".format(c.code and 0xff))
+    }
+}
+
 class OutputBuffer(internal var arr: ByteArray) {
     internal var pos = 0
 
@@ -142,22 +150,24 @@ class OutputBuffer(internal var arr: ByteArray) {
         ensureSpace(1)
         arr[pos++] = b.toByte()
         if (DEFLATE_DEBUG) {
-            val c = b.toInt().toChar()
-            if (c in ' '..'~') {
-                print(c)
-            } else {
-                print("\\u%04x".format(c.code))
-            }
+            printChar(b.toInt().toChar())
         }
     }
 
     fun outputBackref(distance: Int, length: Int) {
         ensureSpace(length)
         outputBackref(arr, pos, distance, length)
+        if (DEFLATE_DEBUG) {
+            for (i in 0 until length) {
+                printChar(arr[pos + i].toInt().toChar())
+            }
+        }
         pos += length
     }
 
-    fun buffer() = ByteBuffer.wrap(arr, 0, pos)
+    fun buffer(): ByteBuffer {
+        return ByteBuffer.wrap(arr, 0, pos)
+    }
 }
 
 private fun outputBackref(arr: ByteArray, pos: Int, distance: Int, length: Int) {
