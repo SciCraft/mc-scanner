@@ -159,7 +159,7 @@ private fun scanChunkItems(version: Int, data: CompoundTag, itemNeedles: Set<Ite
 
 fun scanBlockStates(ids: Int2ObjectMap<BlockState>, blockStates: LongArray, paletteSize: Int, packed: Boolean): Object2IntMap<BlockState> {
     val counts = Object2IntOpenHashMap<BlockState>()
-    val bits = ceil(log2(paletteSize.toDouble())).toInt()
+    val bits = maxOf(4, ceil(log2(paletteSize.toDouble())).toInt())
     val mask = (1 shl bits) - 1
     var longIndex = 0
     var subIndex = 0
