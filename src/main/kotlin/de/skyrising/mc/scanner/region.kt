@@ -31,14 +31,15 @@ data class RegionFile(private val path: Path) : Scannable {
         z = parts[2].toInt()
     }
 
-    override fun scan(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult> {
+    override fun scan(needles: Collection<Needle>, mode: Mode): List<SearchResult> {
+        if (mode == Mode.GEODE && dimension != "overworld") return emptyList()
         val results = mutableListOf<SearchResult>()
         val blockIdNeedles: Set<BlockIdMask> = needles.filterIsInstanceTo(mutableSetOf())
         val blockStateNeedles: Set<BlockState> = needles.filterIsInstanceTo(mutableSetOf())
         val itemNeedles: Set<ItemType> = needles.filterIsInstanceTo(mutableSetOf())
         RegionReader(Files.newByteChannel(path, StandardOpenOption.READ)).use {
             it.accept(RegionVisitor.visitAllChunks { x, z, version, data ->
-                scanChunk(results, blockIdNeedles, blockStateNeedles, itemNeedles, statsMode, ChunkPos(dimension, (this.x shl 5) or x, (this.z shl 5) or z), version, data)
+                scanChunk(results, blockIdNeedles, blockStateNeedles, itemNeedles, mode, ChunkPos(dimension, (this.x shl 5) or x, (this.z shl 5) or z), version, data)
             })
         }
         return results
@@ -67,7 +68,7 @@ fun getBlockStates(section: CompoundTag, version: Int): LongArray? {
     return if (container.has("data", Tag.LONG_ARRAY)) container.getLongArray("data") else null
 }
 
-fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMask>, blockStateNeedles: Set<BlockState>, itemNeedles: Set<ItemType>, statsMode: Boolean, chunkPos: ChunkPos, version: Int, data: CompoundTag) {
+fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMask>, blockStateNeedles: Set<BlockState>, itemNeedles: Set<ItemType>, mode: Mode, chunkPos: ChunkPos, version: Int, data: CompoundTag) {
     val dimension = chunkPos.dimension
     val flattened = version >= DataVersion.FLATTENING
     if (!flattened && blockIdNeedles.isNotEmpty()) {
@@ -76,8 +77,8 @@ fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMas
     if (flattened && blockStateNeedles.isNotEmpty()) {
         scanFlattenedChunk(data, version, blockStateNeedles, results, chunkPos)
     }
-    if (itemNeedles.isNotEmpty() || statsMode) {
-        scanChunkItems(version, data, itemNeedles, statsMode, dimension, results)
+    if (itemNeedles.isNotEmpty() || mode == Mode.STATS) {
+        scanChunkItems(version, data, itemNeedles, mode == Mode.STATS, dimension, results)
     }
 }
 
