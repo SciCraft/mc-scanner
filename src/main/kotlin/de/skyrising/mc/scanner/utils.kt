@@ -2,7 +2,6 @@ package de.skyrising.mc.scanner
 
 import java.io.EOFException
 
-import java.io.IOException
 import java.nio.ByteBuffer
 
 import java.nio.channels.ReadableByteChannel

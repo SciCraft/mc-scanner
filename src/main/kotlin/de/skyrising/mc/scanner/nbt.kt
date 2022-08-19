@@ -1,11 +1,10 @@
 package de.skyrising.mc.scanner
 
 import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap
-import java.io.*
+import java.io.DataInput
+import java.io.DataOutput
+import java.io.Writer
 import java.util.*
-import kotlin.collections.ArrayList
-import kotlin.collections.HashSet
-import kotlin.collections.LinkedHashMap
 import kotlin.reflect.KClass
 
 interface TagType<T: Tag> {

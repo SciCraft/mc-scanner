@@ -2,7 +2,8 @@ package de.skyrising.mc.scanner
 
 import de.skyrising.mc.scanner.region.RegionReader
 import de.skyrising.mc.scanner.region.RegionVisitor
-import it.unimi.dsi.fastutil.ints.*
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.objects.Object2IntMap
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import java.nio.file.Files

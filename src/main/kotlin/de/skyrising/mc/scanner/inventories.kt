@@ -1,8 +1,5 @@
 package de.skyrising.mc.scanner
 
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
-import it.unimi.dsi.fastutil.objects.Object2IntMap
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import it.unimi.dsi.fastutil.objects.Object2LongMap
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap
 import java.nio.ByteBuffer

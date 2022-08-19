@@ -1,8 +1,13 @@
 package de.skyrising.mc.scanner
 
-import java.io.*
+import java.io.ByteArrayInputStream
+import java.io.DataInput
+import java.io.EOFException
+import java.io.UTFDataFormatException
 import java.nio.ByteBuffer
-import java.util.zip.*
+import java.util.zip.GZIPInputStream
+import java.util.zip.Inflater
+import java.util.zip.ZipException
 
 class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
     private var chars = CharArray(128)

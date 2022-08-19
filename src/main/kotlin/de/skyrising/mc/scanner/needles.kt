@@ -1,7 +1,9 @@
 package de.skyrising.mc.scanner
 
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 interface Needle
 
