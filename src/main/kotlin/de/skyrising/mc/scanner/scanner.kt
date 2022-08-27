@@ -233,38 +233,36 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
     println()
 }
 
+fun RandomTickRegion.sumChunks(mapFn: (Vec2i) -> Int): Int {
+    var sum = 0
+    for (i in 0 until 64) {
+        if (chunks and (1UL shl i) == 0UL) continue
+        sum += mapFn(SOMETIMES_RANDOM_TICKED[i])
+    }
+    return sum
+}
+
 fun postProcessGeode(amethystCounts: Object2IntMap<ChunkPos>, resultsFile: PrintStream) {
-    val afkChunks = mutableMapOf<ChunkPos, MutableSet<ChunkPos>>()
+    val afkChunks = mutableMapOf<ChunkPos, Object2IntMap<ChunkPos>>()
     for (pos in amethystCounts.keys) {
         for (x in pos.x - 8 .. pos.x + 8) {
             for (z in pos.z - 8 .. pos.z + 8) {
-                afkChunks.getOrPut(ChunkPos(pos.dimension, x, z)) { mutableSetOf() }.add(pos)
+                afkChunks.getOrPut(ChunkPos(pos.dimension, x, z)) { Object2IntOpenHashMap() }.put(pos, amethystCounts.getInt(pos))
             }
         }
     }
-    var bestPos: BlockPos
+    var bestPos: Vec3d
     var bestCount = 0
     for ((pos, neighbors) in afkChunks) {
-        val maxPossible = neighbors.sumOf(amethystCounts::getInt)
+        val maxPossible = neighbors.values.sum()
         if (maxPossible < bestCount) continue
-        for (ix in 0 until 16) {
-            for (iz in 0 until 16) {
-                var count = 0
-                val x = pos.x * 16 + ix + 0.5
-                val z = pos.z * 16 + iz + 0.5
-                for (neighbor in neighbors) {
-                    val cx = neighbor.x * 16 + 8
-                    val cz = neighbor.z * 16 + 8
-                    val dx = x - cx
-                    val dz = z - cz
-                    if (dx * dx + dz * dz > 128 * 128) continue
-                    count += amethystCounts.getInt(neighbor)
-                }
-                if (count > bestCount) {
-                    bestPos = BlockPos("overworld", x.toInt(), 0, z.toInt())
-                    bestCount = count
-                    resultsFile.println("$bestPos,$bestCount,$ix,$iz")
-                }
+        val base = ALWAYS_RANDOM_TICKED.sumOf { (x, z) -> neighbors.getInt(ChunkPos(pos.dimension, pos.x + x, pos.z + z)) }
+        for (region in RANDOM_TICK_REGIONS) {
+            val count = base + region.sumChunks { (x, z) -> neighbors.getInt(ChunkPos(pos.dimension, pos.x + x, pos.z + z)) }
+            if (count > bestCount) {
+                bestPos = Vec3d("overworld", pos.x * 16 + region.pos.x, 0.0, pos.z * 16 + region.pos.y)
+                bestCount = count
+                resultsFile.println("$bestPos,$bestCount")
             }
         }
     }

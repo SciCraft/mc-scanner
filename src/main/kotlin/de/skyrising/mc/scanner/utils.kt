@@ -7,6 +7,8 @@ import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 import java.util.*
 
+data class Vec2i(val x: Int, val y: Int)
+data class Vec2d(val x: Double, val y: Double)
 
 fun readFully(channel: ReadableByteChannel, b: ByteBuffer) {
     val expectedLength: Int = b.remaining()

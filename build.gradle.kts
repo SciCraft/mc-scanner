@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import de.skyrising.mc.scanner.gen.generateRandomTicksKt
 
 plugins {
     kotlin("jvm") version "1.7.10"
@@ -41,4 +42,24 @@ tasks.test {
 
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = "1.8"
+}
+
+val generatedKotlinDir = project.buildDir.resolve("generated/kotlin")
+
+tasks.create("generateSources") {
+    doFirst {
+        generateRandomTicksKt().writeTo(generatedKotlinDir)
+    }
+}
+
+tasks.compileKotlin {
+    dependsOn("generateSources")
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir(generatedKotlinDir)
+        }
+    }
 }
