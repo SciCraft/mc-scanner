@@ -1,5 +1,7 @@
 package de.skyrising.mc.scanner
 
+import de.skyrising.mc.scanner.script.Scan
+import de.skyrising.mc.scanner.script.ScannerScript
 import it.unimi.dsi.fastutil.objects.*
 import joptsimple.OptionException
 import joptsimple.OptionParser
@@ -14,6 +16,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.function.ToIntFunction
+import kotlin.script.experimental.api.*
+import kotlin.script.experimental.host.toScriptSource
+import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 
 var DECOMPRESSOR = Decompressor.INTERNAL
 
@@ -39,10 +44,10 @@ fun main(args: Array<String>) {
     }
     var threads = 0
     var loopCount = 0
-    val mode: Mode
     val path: Path
     val outPath: Path
     val zip: FileSystem?
+    val script: Path
     try {
         val options = parser.parse(*args)
         if (options.has(helpArg)) {
@@ -61,11 +66,6 @@ fun main(args: Array<String>) {
         }
         if (options.has(threadsArg)) threads = options.valueOf(threadsArg).toInt()
         if (options.has(decompressorArg)) DECOMPRESSOR = options.valueOf(decompressorArg)
-        mode = when {
-            options.has(statsArg) -> Mode.STATS
-            options.has(geode) -> Mode.GEODE
-            else -> Mode.SEARCH
-        }
         if (options.has(loopArg)) {
             loopCount = if (options.hasArgument(loopArg)) {
                 options.valueOf(loopArg).toInt()
@@ -73,7 +73,13 @@ fun main(args: Array<String>) {
                 -1
             }
         }
-        val paths = options.valuesOf(nonOptions)
+        val paths = options.valuesOf(nonOptions).toMutableList()
+        script = when {
+            options.has(statsArg) -> builtinScript("stats")
+            options.has(geode) -> builtinScript("geode")
+            paths.isNotEmpty() && paths[0].endsWith(".scan.kts") -> Paths.get(paths.removeAt(0))
+            else -> builtinScript("search")
+        }
         if (paths.size > 2 || paths.isEmpty()) throw IllegalArgumentException("Expected 1 or 2 paths")
         path = Paths.get(paths[0])
         if (paths.size == 1) {
@@ -105,21 +111,13 @@ fun main(args: Array<String>) {
         printUsage()
         return
     }
-    if (needles.isEmpty() && mode == Mode.SEARCH) {
-        println("Nothing to search for.")
-        return
-    }
-    if (mode == Mode.GEODE) {
-        needles.clear()
-        needles.add(BlockState(Identifier("minecraft", "budding_amethyst"), emptyMap()))
-    }
     val executor = when {
         threads <= 0 -> Executors.newWorkStealingPool()
         threads == 1 -> Executors.newSingleThreadExecutor()
         else -> Executors.newWorkStealingPool(threads)
     }
     do {
-        runScan(path, outPath, executor, needles, mode)
+        runScript(path, outPath, executor, needles, script)
     } while (loopCount == -1 || loopCount-- > 0)
     zip?.close()
     executor.shutdownNow()
@@ -161,21 +159,24 @@ fun getHaystack(path: Path): Set<Scannable> {
     return haystack
 }
 
-enum class Mode {
-    SEARCH, STATS, GEODE
+fun builtinScript(name: String): Path {
+    val url = ScannerScript::class.java.getResource("/scripts/$name.scan.kts")
+    return Paths.get(url?.toURI() ?: throw IllegalArgumentException("Script not found: $name"))
 }
 
-fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Collection<Needle>, mode: Mode) {
-    println(needles)
-    val haystack = getHaystack(path)
+fun evalScript(path: Path, scan: Scan): ResultWithDiagnostics<EvaluationResult> {
+    val source = Files.readAllBytes(path).toString(Charsets.UTF_8).toScriptSource(path.fileName.toString())
+    return BasicJvmScriptingHost().evalWithTemplate<ScannerScript>(source, evaluation = {
+        constructorArgs(scan)
+    })
+}
+
+fun runScript(path: Path, outPath: Path, executor: ExecutorService, needles: List<Needle>, script: Path) {
+    val scan = Scan(outPath, needles)
+    evalScript(script, scan).valueOrThrow()
+    val haystack = getHaystack(path).filterTo(mutableSetOf(), scan.haystackPredicate)
     var totalSize = 0L
     for (s in haystack) totalSize += s.size
-    val resultsFile = if (mode != Mode.STATS) {
-        PrintStream(Files.newOutputStream(outPath.resolve("results.txt")), false, "UTF-8")
-    } else {
-        PrintStream(Files.newOutputStream(outPath.resolve("inventories.csv")), false, "UTF-8")
-    }
-    if (mode == Mode.STATS) resultsFile.println("Location,Sub Location,Type,Count")
     val progressSize = AtomicLong()
     var speed = 0.0
     var resultCount = 0
@@ -189,17 +190,12 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
             print("\u001B[G")
         }
     }
-    val total = Object2LongOpenHashMap<Needle>()
     val index = AtomicInteger()
     printStatus(0)
     val before = System.nanoTime()
-    val stats = Object2ObjectOpenHashMap<ItemType, Object2DoubleMap<ItemType>>()
-    val inventoryCounts = Object2IntOpenHashMap<ItemType>()
-    val locationIds = Object2IntLinkedOpenHashMap<Location>()
-    val amethystCounts = Object2IntOpenHashMap<ChunkPos>()
     val futures = haystack.map { CompletableFuture.runAsync({
         val results = try {
-            it.scan(needles, mode)
+            scan.scanner(it)
         } catch (e: Exception) {
             print("\u001b[2K")
             System.err.println("Error scanning $it")
@@ -210,195 +206,22 @@ fun runScan(path: Path, outPath: Path, executor: ExecutorService, needles: Colle
         val time = System.nanoTime() - before
         val progressAfter = progressSize.addAndGet(it.size)
         speed = progressAfter * 1e9 / time
-        resultCount += onResults(
-            resultsFile,
-            results,
-            inventoryCounts,
-            stats,
-            amethystCounts,
-            mode,
-            locationIds,
-            total
-        )
+        synchronized(scan) {
+            scan.onResults(results)
+            resultCount += results.size
+        }
         printStatus(index.incrementAndGet(), it)
     }, executor)}
     CompletableFuture.allOf(*futures.toTypedArray()).join()
-    when (mode) {
-        Mode.SEARCH -> postProcessSearch(total, resultsFile)
-        Mode.STATS -> postProcessStats(outPath, locationIds, stats, total, inventoryCounts)
-        Mode.GEODE -> postProcessGeode(amethystCounts, resultsFile)
-    }
-    resultsFile.close()
+    scan.postProcess()
     printStatus(haystack.size)
     println()
-}
 
-fun RandomTickRegion.sumChunks(mapFn: (Vec2i) -> Int): Int {
-    var sum = 0
-    for (i in 0 until 64) {
-        if (chunks and (1UL shl i) == 0UL) continue
-        sum += mapFn(SOMETIMES_RANDOM_TICKED[i])
-    }
-    return sum
-}
-
-fun postProcessGeode(amethystCounts: Object2IntMap<ChunkPos>, resultsFile: PrintStream) {
-    val afkChunks = mutableMapOf<ChunkPos, Object2IntMap<ChunkPos>>()
-    for (pos in amethystCounts.keys) {
-        for (x in pos.x - 8 .. pos.x + 8) {
-            for (z in pos.z - 8 .. pos.z + 8) {
-                afkChunks.getOrPut(ChunkPos(pos.dimension, x, z)) { Object2IntOpenHashMap() }.put(pos, amethystCounts.getInt(pos))
-            }
-        }
-    }
-    var bestPos: Vec3d
-    var bestCount = 0
-    for ((pos, neighbors) in afkChunks) {
-        val maxPossible = neighbors.values.sum()
-        if (maxPossible < bestCount) continue
-        val base = ALWAYS_RANDOM_TICKED.sumOf { (x, z) -> neighbors.getInt(ChunkPos(pos.dimension, pos.x + x, pos.z + z)) }
-        for (region in RANDOM_TICK_REGIONS) {
-            val count = base + region.sumChunks { (x, z) -> neighbors.getInt(ChunkPos(pos.dimension, pos.x + x, pos.z + z)) }
-            if (count > bestCount) {
-                bestPos = Vec3d("overworld", pos.x * 16 + region.pos.x, 0.0, pos.z * 16 + region.pos.y)
-                bestCount = count
-                resultsFile.println("$bestPos,$bestCount")
-            }
-        }
-    }
-}
-
-private fun onResults(
-    resultsFile: PrintStream,
-    results: List<SearchResult>,
-    inventoryCounts: Object2IntOpenHashMap<ItemType>,
-    stats: Object2ObjectMap<ItemType, Object2DoubleMap<ItemType>>,
-    amethystCounts: Object2IntOpenHashMap<ChunkPos>,
-    mode: Mode,
-    locationIds: Object2IntMap<Location>,
-    total: Object2LongOpenHashMap<Needle>
-): Int {
-    synchronized(resultsFile) {
-        for (result in results) {
-            when (mode) {
-                Mode.STATS -> {
-                    when (result.needle) {
-                        is StatsResults -> {
-                            val types = result.needle.types
-                            val stride = types.size
-                            val matrix = result.needle.matrix
-                            for (i in 0 until stride) {
-                                inventoryCounts.addTo(types[i], 1)
-                                val map = stats.computeIfAbsent(types[i], Object2ObjectFunction { Object2DoubleOpenHashMap() })
-                                for (j in 0 until stride) {
-                                    val type = types[j]
-                                    val value = matrix[i * stride + j]
-                                    map[type] = map.getDouble(type) + value
-                                }
-                            }
-                            continue
-                        }
-                        is ItemType -> {
-                            val loc = if (result.location is SubLocation) result.location else SubLocation(result.location, 0)
-                            val locId = locationIds.computeIfAbsent(loc.parent, ToIntFunction { locationIds.size })
-                            //val locStr = loc.parent.toString().replace("\"", "\\\"")
-                            //resultsFile.print('"')
-                            //resultsFile.print(locStr)
-                            //resultsFile.print('"')
-                            resultsFile.print(locId)
-                            resultsFile.print(',')
-                            resultsFile.print(loc.index)
-                            resultsFile.print(',')
-                            resultsFile.print(result.needle.id)
-                            resultsFile.print(',')
-                            resultsFile.print(result.count)
-                            resultsFile.println()
-                        }
-                    }
-                }
-                Mode.SEARCH -> {
-                    resultsFile.println("${result.location}: ${result.needle} x ${result.count}")
-                }
-                Mode.GEODE -> {
-                    if (result.needle is BlockState) {
-                        amethystCounts.addTo(result.location as ChunkPos, result.count.toInt())
-                    }
-                }
-            }
-            if (result.location is SubLocation) continue
-            total.addTo(result.needle, result.count)
-        }
-        resultsFile.flush()
-        return results.size
-    }
-}
-
-private fun postProcessSearch(
-    total: Object2LongOpenHashMap<Needle>,
-    resultsFile: PrintStream
-) {
-    val totalTypes = total.keys.sortedWith { a, b ->
-        if (a.javaClass != b.javaClass) return@sortedWith a.javaClass.hashCode() - b.javaClass.hashCode()
-        if (a is ItemType && b is ItemType) return@sortedWith a.compareTo(b)
-        if (a is BlockState && b is BlockState) return@sortedWith a.compareTo(b)
-        0
-    }
-    for (type in totalTypes) {
-        resultsFile.println("Total $type: ${total.getLong(type)}")
-    }
-}
-
-private fun postProcessStats(
-    outPath: Path,
-    locationIds: Object2IntLinkedOpenHashMap<Location>,
-    stats: Object2ObjectOpenHashMap<ItemType, Object2DoubleMap<ItemType>>,
-    total: Object2LongOpenHashMap<Needle>,
-    inventoryCounts: Object2IntOpenHashMap<ItemType>
-) {
-    val locationsFile = PrintStream(Files.newOutputStream(outPath.resolve("locations.csv")), false, "UTF-8")
-    locationsFile.println("Id,Location")
-    for ((location, id) in locationIds) {
-        locationsFile.print(id)
-        locationsFile.print(',')
-        locationsFile.print('"')
-        locationsFile.print(location.toString().replace("\"", "\\\""))
-        locationsFile.println('"')
-    }
-    locationsFile.close()
-    val types = stats.keys.sorted()
-    val countsFile = PrintStream(Files.newOutputStream(outPath.resolve("counts.csv")), false, "UTF-8")
-    countsFile.println("Type,Total,Number of Inventories")
-    for (type in types) {
-        countsFile.print(type.format())
-        countsFile.print(',')
-        countsFile.print(total.getLong(type))
-        countsFile.print(',')
-        countsFile.println(inventoryCounts.getInt(type))
-    }
-    countsFile.close()
-    val statsFile = PrintStream(Files.newOutputStream(outPath.resolve("stats.csv")), false, "UTF-8")
-    for (type in types) {
-        statsFile.print(',')
-        statsFile.print(type.format())
-    }
-    statsFile.println()
-    for (a in types) {
-        statsFile.print(a.id)
-        val map = stats[a]!!
-        val sum = map.values.sum()
-        for (b in types) {
-            statsFile.print(',')
-            val value = map.getDouble(b)
-            statsFile.printf(Locale.ROOT, "%1.5f", value / sum)
-        }
-        statsFile.println()
-    }
-    statsFile.close()
 }
 
 interface Scannable {
     val size: Long
-    fun scan(needles: Collection<Needle>, mode: Mode): List<SearchResult>
+    fun scan(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult>
 }
 interface Location
 

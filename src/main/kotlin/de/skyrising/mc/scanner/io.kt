@@ -58,15 +58,15 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
             skipBytes(count)
             return String(chars, 0, count)
         }
-        return readUTF(chars, count, pos)
+        return readUTF(chars, count, pos, utflen)
     }
 
-    private fun readUTF(chararr: CharArray, start: Int, pos: Int): String {
+    private fun readUTF(chararr: CharArray, start: Int, pos: Int, len: Int): String {
         var count = start
         var char2: Int
         var char3: Int
         var chararrCount = 0
-        while (count < chararr.size) {
+        while (count < len) {
             val c = buf[pos + count].toInt() and 0xff
             when (c shr 4) {
                 0, 1, 2, 3, 4, 5, 6, 7 -> { /* 0xxxxxxx*/
@@ -99,7 +99,7 @@ class ByteBufferDataInput(private val buf: ByteBuffer) : DataInput {
                         "malformed input around byte $count")
             }
         }
-        skipBytes(chararr.size)
+        skipBytes(len)
         return String(chararr, 0, chararrCount)
     }
 }

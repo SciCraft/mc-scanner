@@ -20,6 +20,10 @@ abstract class RegionVisitor() {
                     override fun visit(version: Int, data: CompoundTag) {
                         visit(x, z, version, data)
                     }
+
+                    override fun onInvalidData(e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }

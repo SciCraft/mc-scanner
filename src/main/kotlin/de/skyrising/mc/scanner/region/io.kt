@@ -79,8 +79,14 @@ class RegionReader(private val channel: SeekableByteChannel): AutoCloseable {
             2 -> {
                 try {
                     val buf = DECOMPRESSOR.decodeZlib(chunkBuf, dbuf)
+                    val copy = buf.slice()
                     decompressedBuf.set(buf.array())
-                    Tag.read(ByteBufferDataInput(buf))
+                    try {
+                        Tag.read(ByteBufferDataInput(buf))
+                    } catch (e: Exception) {
+                        println(hexdump(copy))
+                        throw e
+                    }
                 } catch (e: Exception) {
                     visitor.onInvalidData(e)
                     return

@@ -3,9 +3,9 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import de.skyrising.mc.scanner.gen.generateRandomTicksKt
 
 plugins {
-    kotlin("jvm") version "1.7.10"
-    kotlin("plugin.serialization") version "1.7.0"
-    id("com.github.johnrengelman.shadow") version "6.1.0"
+    kotlin("jvm") version "1.8.0"
+    kotlin("plugin.serialization") version "1.8.0"
+    id("com.github.johnrengelman.shadow") version "7.1.2"
     application
 }
 
@@ -15,11 +15,16 @@ repositories {
 }
 
 dependencies {
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    implementation(kotlin("reflect"))
     implementation("it.unimi.dsi:fastutil:8.5.8")
     implementation("net.sf.jopt-simple:jopt-simple:6.0-alpha-3")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.1")
+
+    implementation("org.jetbrains.kotlin:kotlin-scripting-common")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm")
+    //implementation("org.jetbrains.kotlin:kotlin-scripting-dependencies")
+    //implementation("org.jetbrains.kotlin:kotlin-scripting-dependencies-maven")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm-host")
 
     testImplementation(kotlin("test"))
 }
@@ -32,7 +37,10 @@ tasks {
     named<ShadowJar>("shadowJar") {
         classifier = ""
         mergeServiceFiles()
-        minimize()
+        minimize {
+            exclude(dependency("org.jetbrains.kotlin:.*"))
+        }
+        dependsOn(distTar, distZip)
     }
 }
 

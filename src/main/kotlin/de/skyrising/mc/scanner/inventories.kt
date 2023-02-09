@@ -12,15 +12,14 @@ import kotlin.collections.LinkedHashSet
 
 data class PlayerFile(private val path: Path) : Scannable {
     override val size: Long = Files.size(path)
-    private val uuid: UUID
+    val uuid: UUID
     init {
         val nameParts = path.fileName.toString().split('.')
         if (nameParts.size != 2 || nameParts[1] != "dat") throw IllegalArgumentException("Invalid player file: ${path.fileName}")
         uuid = UUID.fromString(nameParts[0])
     }
 
-    override fun scan(needles: Collection<Needle>, mode: Mode): List<SearchResult> {
-        if (mode == Mode.GEODE) return emptyList()
+    override fun scan(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult> {
         val itemNeedles = needles.filterIsInstance<ItemType>()
         if (itemNeedles.isEmpty()) return emptyList()
         val raw = Files.readAllBytes(path)
@@ -28,12 +27,12 @@ data class PlayerFile(private val path: Path) : Scannable {
         if (data !is CompoundTag) return emptyList()
         val results = mutableListOf<SearchResult>()
         if (data.has("Inventory", Tag.LIST)) {
-            val invScan = scanInventory(data.getList("Inventory"), itemNeedles, mode == Mode.STATS)
-            addResults(results, PlayerInventory(uuid, false), invScan, mode == Mode.STATS)
+            val invScan = scanInventory(data.getList("Inventory"), itemNeedles, statsMode)
+            addResults(results, PlayerInventory(uuid, false), invScan, statsMode)
         }
         if (data.has("EnderItems", Tag.LIST)) {
-            val enderScan = scanInventory(data.getList("EnderItems"), itemNeedles, mode == Mode.STATS)
-            addResults(results, PlayerInventory(uuid, true), enderScan, mode == Mode.STATS)
+            val enderScan = scanInventory(data.getList("EnderItems"), itemNeedles, statsMode)
+            addResults(results, PlayerInventory(uuid, true), enderScan, statsMode)
         }
         return results
     }

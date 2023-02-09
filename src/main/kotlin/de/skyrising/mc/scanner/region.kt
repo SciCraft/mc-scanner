@@ -13,9 +13,9 @@ import kotlin.math.ceil
 import kotlin.math.log2
 
 data class RegionFile(private val path: Path) : Scannable {
-    private val x: Int
-    private val z: Int
-    private val dimension = when (val dim = path.getName(path.nameCount - 3).toString()) {
+    val x: Int
+    val z: Int
+    val dimension = when (val dim = path.getName(path.nameCount - 3).toString()) {
         "." -> "overworld"
         "DIM-1" -> "the_nether"
         "DIM1" -> "the_end"
@@ -32,18 +32,27 @@ data class RegionFile(private val path: Path) : Scannable {
         z = parts[2].toInt()
     }
 
-    override fun scan(needles: Collection<Needle>, mode: Mode): List<SearchResult> {
-        if (mode == Mode.GEODE && dimension != "overworld") return emptyList()
+    fun reader() = RegionReader(Files.newByteChannel(path, StandardOpenOption.READ))
+
+    fun forEachChunk(visitor: (x: Int, z: Int, version: Int, data: CompoundTag) -> Unit) {
+        reader().use {
+            it.accept(RegionVisitor.visitAllChunks(visitor))
+        }
+    }
+
+    fun scanChunks(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         val blockIdNeedles: Set<BlockIdMask> = needles.filterIsInstanceTo(mutableSetOf())
         val blockStateNeedles: Set<BlockState> = needles.filterIsInstanceTo(mutableSetOf())
         val itemNeedles: Set<ItemType> = needles.filterIsInstanceTo(mutableSetOf())
-        RegionReader(Files.newByteChannel(path, StandardOpenOption.READ)).use {
-            it.accept(RegionVisitor.visitAllChunks { x, z, version, data ->
-                scanChunk(results, blockIdNeedles, blockStateNeedles, itemNeedles, mode, ChunkPos(dimension, (this.x shl 5) or x, (this.z shl 5) or z), version, data)
-            })
+        forEachChunk { x, z, version, data ->
+            scanChunk(results, blockIdNeedles, blockStateNeedles, itemNeedles, statsMode, ChunkPos(dimension, (this.x shl 5) or x, (this.z shl 5) or z), version, data)
         }
         return results
+    }
+
+    override fun scan(needles: Collection<Needle>, statsMode: Boolean): List<SearchResult> {
+        return scanChunks(needles, statsMode)
     }
 
     override fun toString(): String {
@@ -69,7 +78,7 @@ fun getBlockStates(section: CompoundTag, version: Int): LongArray? {
     return if (container.has("data", Tag.LONG_ARRAY)) container.getLongArray("data") else null
 }
 
-fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMask>, blockStateNeedles: Set<BlockState>, itemNeedles: Set<ItemType>, mode: Mode, chunkPos: ChunkPos, version: Int, data: CompoundTag) {
+fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMask>, blockStateNeedles: Set<BlockState>, itemNeedles: Set<ItemType>, statsMode: Boolean, chunkPos: ChunkPos, version: Int, data: CompoundTag) {
     val dimension = chunkPos.dimension
     val flattened = version >= DataVersion.FLATTENING
     if (!flattened && blockIdNeedles.isNotEmpty()) {
@@ -78,8 +87,8 @@ fun scanChunk(results: MutableList<SearchResult>, blockIdNeedles: Set<BlockIdMas
     if (flattened && blockStateNeedles.isNotEmpty()) {
         scanFlattenedChunk(data, version, blockStateNeedles, results, chunkPos)
     }
-    if (itemNeedles.isNotEmpty() || mode == Mode.STATS) {
-        scanChunkItems(version, data, itemNeedles, mode == Mode.STATS, dimension, results)
+    if (itemNeedles.isNotEmpty() || statsMode) {
+        scanChunkItems(version, data, itemNeedles, statsMode, dimension, results)
     }
 }
 
